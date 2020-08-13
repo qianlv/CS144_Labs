@@ -1,5 +1,7 @@
 *.a
 *.o
+*.swp
+*.swo
 /build
 CMakeCache.txt
 CMakeFiles
