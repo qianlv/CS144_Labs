@@ -1,5 +1,6 @@
 cmake_minimum_required (VERSION 2.8.5)
 cmake_policy (SET CMP0054 NEW)
+set( CMAKE_EXPORT_COMPILE_COMMANDS 1 )
 project (Sponge)
 
 include (etc/build_defs.cmake)
