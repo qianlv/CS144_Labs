@@ -19,6 +19,7 @@ class StreamReassembler {
 
     std::string _partially;
     std::vector<bool> _filled;
+    size_t _nunassembled_bytes;
     bool _eof;
 
   public:
