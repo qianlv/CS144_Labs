@@ -29,16 +29,14 @@ void StreamReassembler::push_substring(const string &data, const size_t index, c
     size_t startWrittenIndex = std::max(_output.bytes_written(), index);
     size_t endWrittenIndex = std::min(_output.bytes_written() + _capacity, index + data.size());
     if (endWrittenIndex ==  index + data.size() && eof) {
-        // std::cout << "EOF" << std::endl;
         _eof = eof;
     }
 
-    // std::cout << startWrittenIndex << "-" << endWrittenIndex << std::endl;
-    // std::cout << _partially.size() << std::endl;
     size_t nAccepted = 0;
     if (endWrittenIndex > startWrittenIndex) {
         nAccepted = endWrittenIndex - startWrittenIndex;
         _n_unassembled_bytes += nAccepted;
+        // data 放入 _partially 中.
         auto iter = _partially.find(startWrittenIndex);
         bool isMerge = false;
         if (iter == _partially.end()) {
@@ -55,13 +53,14 @@ void StreamReassembler::push_substring(const string &data, const size_t index, c
             if (iter != _partially.begin()) {
                 auto prev = iter;
                 prev--;
-                size_t end = prev->first + prev->second.size();
-                if (end >= iter->first + iter->second.size()) {
+                size_t prevEnd = prev->first + prev->second.size();
+                size_t iterEnd = iter->first + iter->second.size();
+                if (prevEnd >= iterEnd ) { // iter 的 data 整个被 prev 的 data 包含了
                     _n_unassembled_bytes -= iter->second.size();
                     _partially.erase(iter);
-                    iter = _partially.end();
-                } else if (prev->first + prev->second.size() >= iter->first) {
-                    size_t i = prev->first + prev->second.size() - iter->first;
+                    iter = _partially.end(); // iter 被整个删除，直接指定为 end, 无需再做任何处理
+                } else if (prevEnd >= iter->first) { // iter 的 data 部分和 prev 的 data 重叠, 把 iter 与 prev 没有重叠的部分放入 prev 的data 中。
+                    size_t i = prevEnd - iter->first;
                     _n_unassembled_bytes -= i;
                     prev->second.append(iter->second.substr(i));
                     _partially.erase(iter);
@@ -70,18 +69,19 @@ void StreamReassembler::push_substring(const string &data, const size_t index, c
             }
 
             if (iter != _partially.end()) {
-                size_t end = iter->first + iter->second.size();
+                size_t iterEnd = iter->first + iter->second.size();
                 auto next = iter;
                 next++;
                 while (next != _partially.end()) {
-                    if (end < next->first) {
+                    if (iterEnd < next->first) { // 完全没有重叠。
                         break;
                     }
-                    if (end >= next->first + next->second.size()) {
+                    size_t nextEnd = next->first + next->second.size();
+                    if (iterEnd >= nextEnd) { // next 被包含再 iter 中
                         _n_unassembled_bytes -= next->second.size();
                         next = _partially.erase(next);
-                    } else {
-                        size_t i = end - next->first;
+                    } else { // next 部分与 iter 重叠
+                        size_t i = iterEnd - next->first;
                         _n_unassembled_bytes -= i;
                         iter->second.append(next->second.substr(i));
                         _partially.erase(next);
@@ -91,9 +91,9 @@ void StreamReassembler::push_substring(const string &data, const size_t index, c
             }
         }
 
+        // 把连续的数据写入 StreamReassembler.
         iter = _partially.begin();
         size_t start = _output.bytes_written();
-        // std::cout << start << "|" << iter->first << std::endl;
         if (iter != _partially.end() && start == iter->first) {
             _n_unassembled_bytes -= iter->second.size();
             _output.write(iter->second);
