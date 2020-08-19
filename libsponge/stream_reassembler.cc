@@ -14,40 +14,91 @@ void DUMMY_CODE(Targs &&... /* unused */) {}
 using namespace std;
 
 StreamReassembler::StreamReassembler(const size_t capacity) :
-    _output(capacity), _capacity(capacity), _partially(capacity, '0'),
-    _filled(capacity, false), _nunassembled_bytes(0), _eof(false) {}
+    _output(capacity), _capacity(capacity), _partially(), _n_unassembled_bytes(0), _eof(false) {}
 
 //! \details This function accepts a substring (aka a segment) of bytes,
 //! possibly out-of-order, from the logical stream, and assembles any newly
 //! contiguous substrings and writes them into the output stream in order.
 void StreamReassembler::push_substring(const string &data, const size_t index, const bool eof) {
-    if (index >= _capacity) {
+    if (index >= _capacity + _output.bytes_written()) {
         return;
     }
 
-    size_t nWrittenIndex = std::max(_output.bytes_written(), index);
-    for (size_t i = nWrittenIndex; i < index + data.size() && i < _capacity; ++i) {
-        if (!_filled[i]) {
-            _filled[i] = true;
-            _partially[i] = data[i-index];
-            _nunassembled_bytes += 1;
-        }
-    }
-
-    size_t start = _output.bytes_written();
-    size_t end = start;
-    while (end < _capacity && _filled[end]) {
-        end += 1;
-    }
-
-    _nunassembled_bytes -= (end - start);
-    _output.write(std::string(_partially.begin() + start, _partially.begin() + end));
-
-    // std::cout << _nunassembled_bytes << std::endl;
-    // std::cout << _capacity - index << "|" << data.size() << std::endl;
-
-    if (_capacity - index >= data.size() && eof) {
+    // std::cout << data << std::endl;
+    // [startWrittenIndex, endWrittenIndex] is the data range to be accpetd.
+    size_t startWrittenIndex = std::max(_output.bytes_written(), index);
+    size_t endWrittenIndex = std::min(_output.bytes_written() + _capacity, index + data.size());
+    if (endWrittenIndex ==  index + data.size() && eof) {
+        // std::cout << "EOF" << std::endl;
         _eof = eof;
+    }
+
+    // std::cout << startWrittenIndex << "-" << endWrittenIndex << std::endl;
+    // std::cout << _partially.size() << std::endl;
+    size_t nAccepted = 0;
+    if (endWrittenIndex > startWrittenIndex) {
+        nAccepted = endWrittenIndex - startWrittenIndex;
+        _n_unassembled_bytes += nAccepted;
+        auto iter = _partially.find(startWrittenIndex);
+        bool isMerge = false;
+        if (iter == _partially.end()) {
+            auto ret = _partially.insert({startWrittenIndex, data.substr(startWrittenIndex - index, nAccepted)});
+            iter = ret.first;
+            isMerge = true;
+        } else if (iter->second.size() < nAccepted) {
+            _n_unassembled_bytes -= iter->second.size();
+            iter->second = data.substr(startWrittenIndex - index, nAccepted);
+            isMerge = true;
+        }
+
+        if (isMerge) {
+            if (iter != _partially.begin()) {
+                auto prev = iter;
+                prev--;
+                size_t end = prev->first + prev->second.size();
+                if (end >= iter->first + iter->second.size()) {
+                    _n_unassembled_bytes -= iter->second.size();
+                    _partially.erase(iter);
+                    iter = _partially.end();
+                } else if (prev->first + prev->second.size() >= iter->first) {
+                    size_t i = prev->first + prev->second.size() - iter->first;
+                    _n_unassembled_bytes -= i;
+                    prev->second.append(iter->second.substr(i));
+                    _partially.erase(iter);
+                    iter = prev;
+                }
+            }
+
+            if (iter != _partially.end()) {
+                size_t end = iter->first + iter->second.size();
+                auto next = iter;
+                next++;
+                while (next != _partially.end()) {
+                    if (end < next->first) {
+                        break;
+                    }
+                    if (end >= next->first + next->second.size()) {
+                        _n_unassembled_bytes -= next->second.size();
+                        next = _partially.erase(next);
+                    } else {
+                        size_t i = end - next->first;
+                        _n_unassembled_bytes -= i;
+                        iter->second.append(next->second.substr(i));
+                        _partially.erase(next);
+                        break;
+                    }
+                }
+            }
+        }
+
+        iter = _partially.begin();
+        size_t start = _output.bytes_written();
+        // std::cout << start << "|" << iter->first << std::endl;
+        if (iter != _partially.end() && start == iter->first) {
+            _n_unassembled_bytes -= iter->second.size();
+            _output.write(iter->second);
+            iter = _partially.erase(iter);
+        }
     }
 
     if (empty() && _eof) {
@@ -56,9 +107,9 @@ void StreamReassembler::push_substring(const string &data, const size_t index, c
 }
 
 size_t StreamReassembler::unassembled_bytes() const {
-    return _nunassembled_bytes;
+    return _n_unassembled_bytes;
 }
 
 bool StreamReassembler::empty() const {
-    return unassembled_bytes() == 0;
+    return _partially.empty();
 }
