@@ -38,18 +38,18 @@ void StreamReassembler::push_substring(const string &data, const size_t index, c
         _n_unassembled_bytes += nAccepted;
         // data 放入 _partially 中.
         auto iter = _partially.find(startWrittenIndex);
-        bool isMerge = false;
+        bool toMerge = false;
         if (iter == _partially.end()) {
             auto ret = _partially.insert({startWrittenIndex, data.substr(startWrittenIndex - index, nAccepted)});
             iter = ret.first;
-            isMerge = true;
+            toMerge = true;
         } else if (iter->second.size() < nAccepted) {
             _n_unassembled_bytes -= iter->second.size();
             iter->second = data.substr(startWrittenIndex - index, nAccepted);
-            isMerge = true;
+            toMerge = true;
         }
 
-        if (isMerge) {
+        if (toMerge) {
             if (iter != _partially.begin()) {
                 auto prev = iter;
                 prev--;
@@ -77,7 +77,7 @@ void StreamReassembler::push_substring(const string &data, const size_t index, c
                         break;
                     }
                     size_t nextEnd = next->first + next->second.size();
-                    if (iterEnd >= nextEnd) { // next 被包含再 iter 中
+                    if (iterEnd >= nextEnd) { // next 被包含在 iter 中
                         _n_unassembled_bytes -= next->second.size();
                         next = _partially.erase(next);
                     } else { // next 部分与 iter 重叠
@@ -91,11 +91,12 @@ void StreamReassembler::push_substring(const string &data, const size_t index, c
             }
         }
 
-        // 把连续的数据写入 StreamReassembler.
+        // 把连续的数据写入 ByteStream.
         iter = _partially.begin();
         size_t start = _output.bytes_written();
         if (iter != _partially.end() && start == iter->first) {
             _n_unassembled_bytes -= iter->second.size();
+            // 如果由于 ByteStream 的容量，数据没有完全写入，怎么处理?
             _output.write(iter->second);
             iter = _partially.erase(iter);
         }
